@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProjectHQ Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Frappe Gantt Chart JS & CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.css">
+    
+    <style>
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        body.modal-open { overflow: hidden; }
+        
+        /* Custom Colors for Gantt Chart based on Status */
+        .bar-active .bar { fill: #3b82f6 !important; }
+        .bar-risk .bar { fill: #a855f7 !important; }
+        .bar-completed .bar { fill: #10b981 !important; }
+        .bar-planned .bar { fill: #94a3b8 !important; }
+        
+        /* Hide Frappe's default labels since we built a dedicated left-sidebar for them */
+        .gantt .bar-label { display: none !important; }
+        
+        /* Smooth scrolling for the Gantt wrapper */
+        .gantt-scroll-wrapper { overflow-x: auto; overflow-y: hidden; }
+        
+        /* Synchronized heights for the split-view */
+        .gantt-y-axis-row { 
+            height: 43px; 
+            box-sizing: border-box; 
+            border-bottom: 1px solid #f8fafc; 
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900 font-sans">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-2 text-indigo-700">
+                <i data-lucide="layout-dashboard" class="h-6 w-6"></i>
+                <h1 class="text-xl font-bold tracking-tight">ProjectHQ</h1>
+                <span id="demo-badge" class="ml-2 px-2 py-0.5 rounded text-xs font-semibold bg-indigo-100 text-indigo-800 hidden">DEMO MODE</span>
+            </div>
+            
+            <div class="flex items-center gap-4 text-sm">
+                <span id="last-updated" class="text-slate-500 hidden sm:inline-block"></span>
+                
+                <button id="btn-add-project" class="hidden items-center gap-1.5 px-4 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors shadow-sm">
+                    <i data-lucide="plus" class="h-4 w-4"></i> Add Project
+                </button>
+                <button id="btn-add-task" class="hidden items-center gap-1.5 px-4 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-medium transition-colors shadow-sm">
+                    <i data-lucide="plus" class="h-4 w-4"></i> Add Task
+                </button>
+                
+                <button id="btn-refresh" class="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 font-medium transition-colors bg-white hover:bg-slate-50 text-slate-700">
+                    <i data-lucide="refresh-cw" id="refresh-icon" class="h-4 w-4"></i> Refresh
+                </button>
+                <button id="btn-setup-view" class="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium transition-colors">
+                    <i data-lucide="settings" class="h-4 w-4"></i> Setup
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Setup View -->
+        <div id="setup-view" class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-8 max-w-2xl mx-auto hidden">
+            <div class="p-6 sm:p-8">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="p-3 bg-indigo-100 rounded-lg text-indigo-600">
+                        <i data-lucide="database" class="h-6 w-6"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-semibold text-slate-900">Connect to Apps Script Bridge</h2>
+                        <p class="text-slate-500 text-sm mt-1">Paste your deployed Web App URL to load secure data.</p>
+                    </div>
+                </div>
+
+                <form id="setup-form" class="space-y-4">
+                    <div>
+                        <label for="sheet-url" class="block text-sm font-medium text-slate-700 mb-1">
+                            Google Apps Script Web App URL
+                        </label>
+                        <input id="sheet-url" type="url" placeholder="https://script.google.com/a/macros/..." class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all" required />
+                    </div>
+                    
+                    <div id="error-message" class="hidden p-4 bg-red-50 text-red-700 rounded-lg text-sm flex items-start gap-2 border border-red-100">
+                        <i data-lucide="shield-alert" class="h-5 w-5 shrink-0 mt-0.5"></i>
+                        <div>
+                            <p class="font-medium">Connection Error</p>
+                            <p id="error-text"></p>
+                        </div>
+                    </div>
+
+                    <div class="pt-2 flex gap-3">
+                        <button type="submit" id="btn-connect" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors flex justify-center items-center shadow-sm">
+                            Connect Dashboard
+                        </button>
+                        <button type="button" id="btn-demo" class="flex-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-medium py-2 px-4 rounded-lg transition-colors">
+                            View Demo
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Dashboard View (Projects) -->
+        <div id="dashboard-view" class="hidden space-y-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-sm font-medium text-slate-500">Total Projects</p>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <span id="kpi-total" class="text-3xl font-bold text-slate-900">0</span>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-sm font-medium text-slate-500">Active / Execution</p>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <span id="kpi-active" class="text-3xl font-bold text-blue-600">0</span>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-sm font-medium text-slate-500">At Risk / Testing</p>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <span id="kpi-risk" class="text-3xl font-bold text-purple-600">0</span>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <p class="text-sm font-medium text-slate-500">Completed</p>
+                    <div class="mt-2 flex items-baseline gap-2">
+                        <span id="kpi-completed" class="text-3xl font-bold text-emerald-600">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div class="px-6 py-5 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                    <h3 class="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                        <i data-lucide="folder-open" class="h-5 w-5 text-indigo-600"></i> Project Portfolio
+                    </h3>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Project Name</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Manager</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Due Date</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Progress</th>
+                                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body" class="bg-white divide-y divide-slate-100">
+                            <!-- Rows injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tasks Detail View -->
+        <div id="tasks-view" class="hidden space-y-6">
+            <div class="flex items-center gap-2 text-sm font-medium text-slate-500 mb-2">
+                <button onclick="backToProjects()" class="hover:text-indigo-600 transition-colors flex items-center gap-1">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to Projects
+                </button>
+                <span>/</span>
+                <span id="task-view-project-name" class="text-slate-900 font-semibold">Project Name</span>
+            </div>
+
+            <!-- GANTT CHART SECTION WITH SPLIT VIEW -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 z-20 relative">
+                    <h3 class="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                        <i data-lucide="calendar-days" class="h-5 w-5 text-indigo-600"></i> Project Timeline
+                    </h3>
+                    <div class="flex gap-2">
+                        <button onclick="changeGanttView('Day')" class="text-xs px-3 py-1.5 bg-white border border-slate-300 rounded shadow-sm hover:bg-slate-50 text-slate-700 font-medium transition-colors">Day</button>
+                        <button onclick="changeGanttView('Week')" class="text-xs px-3 py-1.5 bg-white border border-slate-300 rounded shadow-sm hover:bg-slate-50 text-slate-700 font-medium transition-colors">Week</button>
+                        <button onclick="changeGanttView('Month')" class="text-xs px-3 py-1.5 bg-white border border-slate-300 rounded shadow-sm hover:bg-slate-50 text-slate-700 font-medium transition-colors">Month</button>
+                    </div>
+                </div>
+                
+                <div class="flex flex-row w-full bg-white relative">
+                    <div id="gantt-sidebar" class="w-1/3 md:w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col relative z-10 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)] hidden">
+                        <div class="h-[50px] flex items-center px-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
+                            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Task Name</span>
+                        </div>
+                        <div id="gantt-y-axis" class="flex flex-col bg-white pb-[18px]"></div>
+                    </div>
+                    
+                    <div id="gantt-wrapper" class="flex-1 gantt-scroll-wrapper relative min-h-[100px]">
+                        <div id="gantt-chart"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TASK LIST SECTION WITH FILTERS -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-6">
+                
+                <!-- DYNAMIC FILTER BAR -->
+                <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <h3 class="text-lg font-semibold text-slate-900 flex items-center gap-2 shrink-0">
+                        <i data-lucide="list-todo" class="h-5 w-5 text-indigo-600"></i> Task Details
+                    </h3>
+                    <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                        <div class="relative w-full md:w-48">
+                            <i data-lucide="search" class="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400"></i>
+                            <input type="text" id="filter-task-search" placeholder="Search tasks..." class="w-full pl-8 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow">
+                        </div>
+                        <select id="filter-task-status" class="w-full md:w-36 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white transition-shadow">
+                            <option value="All">All Statuses</option>
+                        </select>
+                        <select id="filter-task-assignee" class="w-full md:w-36 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white transition-shadow">
+                            <option value="All">All Assignees</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-1/2">Task Name</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Assignee</th>
+                                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="task-table-body" class="bg-white divide-y divide-slate-100">
+                            <!-- Tasks injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals -->
+    <!-- 1. Dynamic Project Modal -->
+    <div id="project-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 shrink-0">
+                <h3 id="project-modal-title" class="text-lg font-bold text-slate-900">Add Project</h3>
+                <button onclick="closeModals()" class="text-slate-400 hover:text-slate-600 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <form id="project-form" class="flex flex-col overflow-hidden">
+                <div id="dynamic-project-fields" class="p-6 space-y-4 overflow-y-auto"></div>
+                <div class="p-6 pt-2 border-t border-slate-100 flex justify-end gap-3 shrink-0 bg-slate-50">
+                    <button type="button" onclick="closeModals()" class="px-4 py-2 text-slate-700 font-medium hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
+                    <button type="submit" id="btn-save-project-modal" class="px-6 py-2 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-lg transition-colors shadow-sm flex items-center gap-2">Save Project</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 2. Dynamic Task Modal -->
+    <div id="task-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 shrink-0">
+                <h3 id="task-modal-title" class="text-lg font-bold text-slate-900">Add Task</h3>
+                <button onclick="closeModals()" class="text-slate-400 hover:text-slate-600 transition-colors"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <form id="task-form" class="flex flex-col overflow-hidden">
+                <div id="dynamic-task-fields" class="p-6 space-y-4 overflow-y-auto"></div>
+                <div class="p-6 pt-2 border-t border-slate-100 flex justify-end gap-3 shrink-0 bg-slate-50">
+                    <button type="button" onclick="closeModals()" class="px-4 py-2 text-slate-700 font-medium hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
+                    <button type="submit" id="btn-save-task-modal" class="px-6 py-2 bg-indigo-600 text-white font-medium hover:bg-indigo-700 rounded-lg transition-colors shadow-sm flex items-center gap-2">Save Task</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 3. Delete Confirmation Modal -->
+    <div id="delete-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 overflow-hidden p-6 text-center border border-slate-200">
+            <div class="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-900 mb-2">Delete <span id="delete-type-label">Item</span>?</h3>
+            <p class="text-slate-500 text-sm mb-6">Are you sure you want to delete <strong id="delete-item-name" class="text-slate-700"></strong>? This action is permanent.</p>
+            <div class="flex gap-3">
+                <button onclick="closeModals()" class="flex-1 px-4 py-2 border border-slate-300 text-slate-700 font-medium hover:bg-slate-50 rounded-lg transition-colors">Cancel</button>
+                <button id="btn-confirm-delete" class="flex-1 px-4 py-2 bg-red-600 text-white font-medium hover:bg-red-700 rounded-lg transition-colors shadow-sm flex justify-center items-center">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // ⚙️ SETUP: HARDCODED APPS SCRIPT URL
+        // ==========================================
+        let activeScriptUrl = "https://script.google.com/macros/s/AKfycbw1SUQx2XvYskmhtXpJpAwanHJPURAwf9nP2hx0hatA3djTTdE0kMC9iTrHmtpVlkjUQQ/exec"; 
+        // ==========================================
+
+        // --- State Variables ---
+        let currentView = 'setup'; 
+        let isDemoMode = false;
+        
+        let currentProjects = [];
+        let projectHeaders = ["Project Name", "Status", "Manager", "Due Date", "Progress (%)"];
+        let projectStatusOptions = ["Planning", "Active", "At Risk", "Completed"]; 
+        let editingProjectId = null; 
+        let currentEditingProjectRow = null; 
+
+        let allTasks = [];
+        let taskHeaders = ["Project Name", "Task Name", "Status", "Assignee", "Start Date", "End Date", "Progress (%)", "Notes"];
+        let taskStatusOptions = ["Not Started", "In Progress", "Completed"];
+        let activeProjectName = null;
+        let editingTaskId = null;
+        let currentEditingTaskRow = null; 
+
+        let filterTaskSearch = "";
+        let filterTaskStatus = "All";
+        let filterTaskAssignee = "All";
+
+        let deletingItemType = null; 
+        let deletingItemId = null;
+        let activeGanttChart = null;
+
+        const MOCK_PROJECTS = [
+            { "_row": 2, "Project Name": "Website Redesign", "Status": "Execution", "Manager": "Alice Smith", "Due Date": "2026-05-15", "Progress (%)": "0" },
+            { "_row": 3, "Project Name": "Q3 Marketing Campaign", "Status": "Planning", "Manager": "Bob Jones", "Due Date": "2026-07-01", "Progress (%)": "15" }
+        ];
+        const today = new Date(); const fmtDate = (d) => d.toISOString().split('T')[0];
+        let d1 = new Date(); d1.setDate(today.getDate() - 2); let d2 = new Date(); d2.setDate(today.getDate() + 2);
+        let d3 = new Date(); d3.setDate(today.getDate() + 3); let d4 = new Date(); d4.setDate(today.getDate() + 7);
+
+        const MOCK_TASKS = [
+            { "_row": 2, "Project Name": "Website Redesign", "Task Name": "Wireframing & UI Discovery", "Status": "Completed", "Start Date": fmtDate(d1), "End Date": fmtDate(d2), "Progress (%)": "100", "Assignee": "Alice", "Notes": "Client approved the initial layout." },
+            { "_row": 3, "Project Name": "Website Redesign", "Task Name": "Frontend Development Block", "Status": "Execution", "Start Date": fmtDate(today), "End Date": fmtDate(d4), "Progress (%)": "45", "Assignee": "David", "Notes": "" },
+            { "_row": 4, "Project Name": "Website Redesign", "Task Name": "Database Setup", "Status": "Planning", "Start Date": fmtDate(today), "End Date": fmtDate(d3), "Progress (%)": "0", "Assignee": "Alice", "Notes": "Pending credentials" }
+        ];
+
+        lucide.createIcons();
+
+        // --- Auto-Load Logic ---
+        window.addEventListener('DOMContentLoaded', () => {
+            if (activeScriptUrl && activeScriptUrl.trim() !== "") {
+                isDemoMode = false;
+                document.getElementById('sheet-url').value = activeScriptUrl; 
+                fetchAndRenderProjects('read');
+            } else {
+                switchView('setup');
+            }
+        });
+
+        // --- FILTER LOGIC ---
+        document.getElementById('filter-task-search').addEventListener('input', (e) => { filterTaskSearch = e.target.value.toLowerCase(); updateTaskViews(); });
+        document.getElementById('filter-task-status').addEventListener('change', (e) => { filterTaskStatus = e.target.value; updateTaskViews(); });
+        document.getElementById('filter-task-assignee').addEventListener('change', (e) => { filterTaskAssignee = e.target.value; updateTaskViews(); });
+
+        function updateTaskViews() {
+            renderTasksTable();
+            renderGanttChart();
+        }
+
+        function populateTaskFilters() {
+            const projectTasks = allTasks.filter(row => {
+                const pName = row["Project Name"] || row["Project"] || "";
+                return pName.toLowerCase() === (activeProjectName || "").toLowerCase();
+            });
+
+            const statuses = new Set();
+            const assignees = new Set();
+
+            projectTasks.forEach(row => {
+                const status = (row["Status"] || row["State"] || "").trim();
+                const assignee = (row["Assignee"] || row["Assigned To"] || row["Task Owner"] || row["Owner"] || "Unassigned").trim();
+                if (status) statuses.add(status);
+                if (assignee) assignees.add(assignee);
+            });
+
+            const statusSelect = document.getElementById('filter-task-status');
+            statusSelect.innerHTML = '<option value="All">All Statuses</option>' + 
+                Array.from(statuses).sort().map(s => `<option value="${s}">${s}</option>`).join('');
+            
+            if (statuses.has(filterTaskStatus)) statusSelect.value = filterTaskStatus;
+            else { filterTaskStatus = 'All'; statusSelect.value = 'All'; }
+
+            const assigneeSelect = document.getElementById('filter-task-assignee');
+            assigneeSelect.innerHTML = '<option value="All">All Assignees</option>' + 
+                Array.from(assignees).sort().map(a => `<option value="${a}">${a}</option>`).join('');
+            
+            if (assignees.has(filterTaskAssignee)) assigneeSelect.value = filterTaskAssignee;
+            else { filterTaskAssignee = 'All'; assigneeSelect.value = 'All'; }
+        }
+
+        function getFilteredTasks() {
+            return allTasks.filter(row => {
+                const pName = row["Project Name"] || row["Project"] || "";
+                if (pName.toLowerCase() !== (activeProjectName || "").toLowerCase()) return false;
+
+                const tName = (row["Task Name"] || row["Task"] || "").toLowerCase();
+                if (filterTaskSearch && !tName.includes(filterTaskSearch)) return false;
+
+                const status = (row["Status"] || row["State"] || "").trim();
+                if (filterTaskStatus !== 'All' && status !== filterTaskStatus) return false;
+
+                const assignee = (row["Assignee"] || row["Assigned To"] || row["Task Owner"] || row["Owner"] || "Unassigned").trim();
+                if (filterTaskAssignee !== 'All' && assignee !== filterTaskAssignee) return false;
+
+                return true;
+            });
+        }
+
+        // --- UI Helper Functions ---
+        function getStatusBadgeHTML(status) {
+            const s = (status || "").toString().toLowerCase();
+            if (s.includes("active") || s.includes("in progress") || s === "execution") return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"><i data-lucide="play-circle" class="w-3 h-3 mr-1"></i> ${status}</span>`;
+            if (s.includes("risk") || s.includes("delayed")) return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"><i data-lucide="alert-circle" class="w-3 h-3 mr-1"></i> ${status}</span>`;
+            if (s.includes("testing") || s.includes("review")) return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"><i data-lucide="microscope" class="w-3 h-3 mr-1"></i> ${status}</span>`;
+            if (s.includes("completed") || s.includes("done")) return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800"><i data-lucide="check-circle-2" class="w-3 h-3 mr-1"></i> ${status}</span>`;
+            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"><i data-lucide="clock" class="w-3 h-3 mr-1"></i> ${status || "Pending"}</span>`;
+        }
+
+        function getProgressColorClass(progress) {
+            const p = parseFloat(progress);
+            if (isNaN(p)) return 'bg-gray-200';
+            if (p >= 100) return 'bg-emerald-500';
+            if (p < 30) return 'bg-amber-500';
+            return 'bg-blue-500';
+        }
+
+        function showError(msg) {
+            document.getElementById('error-text').textContent = msg;
+            document.getElementById('error-message').classList.remove('hidden');
+        }
+
+        function hideError() {
+            document.getElementById('error-message').classList.add('hidden');
+        }
+
+        function setLoading(isLoading, actionType = 'read') {
+            const btnConnect = document.getElementById('btn-connect');
+            const btnSaveProj = document.getElementById('btn-save-project-modal');
+            const btnSaveTask = document.getElementById('btn-save-task-modal');
+            const btnDelete = document.getElementById('btn-confirm-delete');
+            const refreshIcon = document.getElementById('refresh-icon');
+
+            if (isLoading) {
+                if(actionType === 'update' || actionType === 'create') {
+                    btnSaveProj.innerHTML = '<i data-lucide="refresh-cw" class="w-4 h-4 spin"></i> Saving...'; btnSaveProj.disabled = true;
+                    btnSaveTask.innerHTML = '<i data-lucide="refresh-cw" class="w-4 h-4 spin"></i> Saving...'; btnSaveTask.disabled = true;
+                } else if (actionType === 'delete') {
+                    btnDelete.innerHTML = '<i data-lucide="refresh-cw" class="w-4 h-4 spin"></i> Deleting...'; btnDelete.disabled = true;
+                } else {
+                    refreshIcon.classList.add('spin');
+                    if (btnConnect) { btnConnect.innerHTML = '<i data-lucide="refresh-cw" class="h-5 w-5 spin"></i> Connecting...'; btnConnect.disabled = true; }
+                }
+            } else {
+                refreshIcon.classList.remove('spin');
+                if (btnConnect) { btnConnect.innerHTML = 'Connect Dashboard'; btnConnect.disabled = false; }
+                btnSaveProj.innerHTML = 'Save Project'; btnSaveProj.disabled = false;
+                btnSaveTask.innerHTML = 'Save Task'; btnSaveTask.disabled = false;
+                btnDelete.innerHTML = 'Delete'; btnDelete.disabled = false;
+            }
+            lucide.createIcons();
+        }
+
+        function switchView(viewName) {
+            currentView = viewName;
+            document.getElementById('setup-view').classList.add('hidden');
+            document.getElementById('dashboard-view').classList.add('hidden');
+            document.getElementById('tasks-view').classList.add('hidden');
+            
+            const btnAddProject = document.getElementById('btn-add-project');
+            const btnAddTask = document.getElementById('btn-add-task');
+            btnAddProject.classList.add('hidden');
+            btnAddTask.classList.add('hidden');
+
+            if (viewName === 'setup') {
+                document.getElementById('setup-view').classList.remove('hidden');
+                document.getElementById('demo-badge').classList.add('hidden');
+                document.getElementById('last-updated').classList.add('hidden');
+            } else if (viewName === 'dashboard') {
+                document.getElementById('dashboard-view').classList.remove('hidden');
+                if (!isDemoMode) { btnAddProject.classList.remove('hidden'); btnAddProject.classList.add('flex'); }
+            } else if (viewName === 'tasks') {
+                document.getElementById('tasks-view').classList.remove('hidden');
+                if (!isDemoMode) { btnAddTask.classList.remove('hidden'); btnAddTask.classList.add('flex'); }
+            }
+        }
+
+        // --- DYNAMIC FORM GENERATOR ENGINE ---
+        function generateDynamicFields(containerId, headers, rowData, statusOptions, ignoreHeaders = []) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            headers.forEach(header => {
+                const h = header.toLowerCase();
+                if (ignoreHeaders.some(ih => h === ih)) return; 
+                
+                const div = document.createElement('div');
+                const label = document.createElement('label');
+                label.className = "block text-sm font-medium text-slate-700 mb-1";
+                label.textContent = header;
+                div.appendChild(label);
+                
+                let val = rowData && rowData[header] !== undefined ? rowData[header] : '';
+                
+                if (h.includes('status') || h.includes('state')) {
+                    const select = document.createElement('select');
+                    select.className = "w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 bg-white";
+                    select.dataset.header = header;
+                    
+                    statusOptions.forEach(opt => select.add(new Option(opt, opt)));
+                    const lowerOptions = statusOptions.map(o => o.toLowerCase());
+                    if (val && !lowerOptions.includes(val.toLowerCase())) select.add(new Option(val, val)); 
+                    select.value = val || (statusOptions.length > 0 ? statusOptions[0] : '');
+                    div.appendChild(select);
+                
+                } else if (h.includes('date') || h.includes('due') || h.includes('start') || h.includes('end')) {
+                    const input = document.createElement('input');
+                    input.type = 'date';
+                    input.className = "w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900";
+                    input.dataset.header = header;
+                    
+                    if (val && !val.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                        try { const d = new Date(val); if (!isNaN(d.getTime())) val = d.toISOString().split('T')[0]; } catch(e) {}
+                    }
+                    input.value = val;
+                    div.appendChild(input);
+                
+                } else if (h.includes('progress') || h.includes('%')) {
+                    const input = document.createElement('input');
+                    input.type = 'number'; input.min = '0'; input.max = '100';
+                    input.dataset.header = header;
+                    if (typeof val === 'string') val = val.replace('%', '');
+                    input.value = parseFloat(val) || 0;
+                    
+                    // NEW: Disable Progress Field in Project Modals (since it's auto-calculated)
+                    if (containerId === 'dynamic-project-fields') {
+                        input.className = "w-full px-3 py-2 border border-slate-300 rounded-lg outline-none text-slate-500 bg-slate-100 cursor-not-allowed";
+                        input.readOnly = true;
+                        label.textContent = header + " (Auto-calculated from Tasks)";
+                    } else {
+                        input.className = "w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900";
+                    }
+                    
+                    div.appendChild(input);
+                
+                } else if (h.includes('notes') || h.includes('comments') || h.includes('description') || h.includes('summary')) {
+                    const input = document.createElement('textarea');
+                    input.rows = 3;
+                    input.className = "w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900";
+                    input.dataset.header = header;
+                    input.value = val;
+                    div.appendChild(input);
+                
+                } else {
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    if(h === 'project name' || h === 'task name') input.required = true;
+                    input.className = "w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900";
+                    input.dataset.header = header;
+                    input.value = val;
+                    div.appendChild(input);
+                }
+                
+                container.appendChild(div);
+            });
+        }
+
+        function extractDynamicFormData(containerId, headers, currentEditingRow, ignoreHeadersMap = {}) {
+            const container = document.getElementById(containerId);
+            const inputs = Array.from(container.querySelectorAll('[data-header]'));
+            const inputMap = {};
+            
+            inputs.forEach(input => {
+                inputMap[input.dataset.header] = input.value;
+            });
+            
+            return headers.map(header => {
+                const h = header.toLowerCase();
+                if (ignoreHeadersMap[h] !== undefined) return ignoreHeadersMap[h];
+                if (inputMap[header] !== undefined) return inputMap[header];
+                return currentEditingRow && currentEditingRow[header] !== undefined ? currentEditingRow[header] : '';
+            });
+        }
+
+        // --- THE API BRIDGE ---
+        function executeAppsScript(sheetName, action = 'read', rowId = null, rowData = null) {
+            return new Promise((resolve, reject) => {
+                // Ensure unique callback names even for concurrent requests
+                const callbackName = 'googleAppsScriptCallback_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+                const timeoutId = setTimeout(() => {
+                    cleanup();
+                    reject(new Error("Connection timed out. Check your network connection."));
+                }, 15000);
+
+                window[callbackName] = function(data) {
+                    cleanup();
+                    if(data && data.status === 'error') reject(new Error(data.message));
+                    else resolve(data);
+                };
+
+                const script = document.createElement('script');
+                script.id = callbackName;
+                
+                let params = `callback=${callbackName}&action=${action}&sheetName=${encodeURIComponent(sheetName)}&t=${Date.now()}`;
+                if (rowId) params += `&row=${rowId}`;
+                if (rowData) params += `&rowData=${encodeURIComponent(JSON.stringify(rowData))}`;
+
+                const separator = activeScriptUrl.includes('?') ? '&' : '?';
+                script.src = `${activeScriptUrl}${separator}${params}`;
+                
+                script.onerror = () => {
+                    cleanup();
+                    reject(new Error("Network error. Ensure your link is correct."));
+                };
+
+                document.head.appendChild(script);
+
+                function cleanup() {
+                    clearTimeout(timeoutId);
+                    const s = document.getElementById(callbackName);
+                    if (s) s.remove();
+                    delete window[callbackName];
+                }
+            });
+        }
+
+        // --- DATA FETCHING (CONCURRENT) ---
+        async function fetchAndRenderProjects(action = 'read', rowId = null, rowData = null) {
+            if (!activeScriptUrl && !isDemoMode) return;
+            if (isDemoMode && action !== 'read') { alert("Editing disabled in Demo Mode."); closeModals(); return; }
+
+            setLoading(true, action);
+            hideError();
+            
+            try {
+                if (isDemoMode) {
+                    currentProjects = MOCK_PROJECTS;
+                    allTasks = MOCK_TASKS;
+                } else {
+                    // Update projects first
+                    const projResult = await executeAppsScript('', action, rowId, rowData);
+                    if (projResult.headers && projResult.headers.length > 0) projectHeaders = projResult.headers;
+                    if (projResult.statusOptions && projResult.statusOptions.length > 0) projectStatusOptions = projResult.statusOptions;
+                    currentProjects = projResult.data || [];
+                    
+                    // Concurrently pull tasks so we can auto-calculate project progress
+                    const tasksResult = await executeAppsScript('Tasks', 'read');
+                    allTasks = tasksResult.data || [];
+                }
+                
+                renderProjectsTable();
+                switchView('dashboard');
+                closeModals();
+            } catch (err) {
+                console.error(err);
+                if(action === 'read') {
+                    showError(err.message);
+                    switchView('setup');
+                } else {
+                    alert("Error saving data: " + err.message);
+                }
+            } finally {
+                setLoading(false, action);
+            }
+        }
+
+        async function fetchAndRenderTasks(action = 'read', rowId = null, rowData = null) {
+            if (!activeScriptUrl && !isDemoMode) return;
+            if (isDemoMode && action !== 'read') { alert("Editing disabled in Demo Mode."); closeModals(); return; }
+
+            setLoading(true, action);
+            
+            try {
+                if (isDemoMode) {
+                    allTasks = MOCK_TASKS;
+                } else {
+                    const result = await executeAppsScript('Tasks', action, rowId, rowData);
+                    if (result.headers && result.headers.length > 0) taskHeaders = result.headers;
+                    if (result.statusOptions && result.statusOptions.length > 0) taskStatusOptions = result.statusOptions;
+                    allTasks = result.data || [];
+                }
+                
+                populateTaskFilters();
+                updateTaskViews(); 
+                
+                switchView('tasks');
+                closeModals();
+            } catch (err) {
+                console.error(err);
+                alert("Error loading tasks. Did you create the 'Tasks' tab in Google Sheets? " + err.message);
+                switchView('dashboard');
+            } finally {
+                setLoading(false, action);
+            }
+        }
+
+        // --- GANTT CHART LOGIC ---
+        function parseDateToYMD(dateStr, fallbackDate) {
+            if (!dateStr) return fallbackDate.toISOString().split('T')[0];
+            try {
+                const d = new Date(dateStr);
+                if (isNaN(d.getTime())) return fallbackDate.toISOString().split('T')[0];
+                return d.toISOString().split('T')[0];
+            } catch(e) {
+                return fallbackDate.toISOString().split('T')[0];
+            }
+        }
+
+        function renderGanttChart() {
+            const chartContainer = document.getElementById('gantt-chart');
+            const sidebar = document.getElementById('gantt-sidebar');
+            const yAxisContainer = document.getElementById('gantt-y-axis');
+            
+            const filteredTasks = getFilteredTasks();
+
+            if (filteredTasks.length === 0) {
+                sidebar.classList.add('hidden');
+                chartContainer.innerHTML = `<div class="p-8 text-center text-slate-500">No tasks match your filters.</div>`;
+                return;
+            } else {
+                sidebar.classList.remove('hidden');
+            }
+
+            yAxisContainer.innerHTML = '';
+            
+            const ganttData = filteredTasks.map((row, index) => {
+                const name = row["Task Name"] || row["Task"] || `Task ${index + 1}`;
+                const notes = row["Notes"] || row["Comments"] || row["Description"] || "";
+                
+                let safeNotesTitle = name.replace(/"/g, '&quot;');
+                let notesIcon = '';
+                if (notes.trim() !== '') {
+                    const safeNotes = notes.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;").replace(/\n/g, "&#10;");
+                    safeNotesTitle = `Notes:&#10;${safeNotes}`; 
+                    notesIcon = `<i data-lucide="message-square" class="w-3 h-3 text-indigo-400 ml-1 shrink-0"></i>`;
+                }
+
+                yAxisContainer.innerHTML += `
+                    <div class="gantt-y-axis-row px-4 flex items-center bg-white hover:bg-slate-50 transition-colors cursor-default" title="${safeNotesTitle}">
+                        <span class="text-sm font-medium text-slate-700 truncate">${name}</span>
+                        ${notesIcon}
+                    </div>
+                `;
+                
+                let startRaw = row["Start Date"] || row["Start"];
+                let endRaw = row["End Date"] || row["Due Date"] || row["Deadline"];
+
+                if (!startRaw && !endRaw) {
+                    startRaw = new Date(); endRaw = new Date(Date.now() + 86400000);
+                } else if (!startRaw && endRaw) {
+                    let e = new Date(endRaw); if(isNaN(e.getTime())) e = new Date();
+                    startRaw = new Date(e.getTime() - (3 * 86400000)); 
+                } else if (startRaw && !endRaw) {
+                    let s = new Date(startRaw); if(isNaN(s.getTime())) s = new Date();
+                    endRaw = new Date(s.getTime() + (3 * 86400000));
+                }
+
+                let start = parseDateToYMD(startRaw, new Date());
+                let end = parseDateToYMD(endRaw, new Date(Date.now() + 86400000));
+
+                if (new Date(start) > new Date(end)) { const temp = start; start = end; end = temp; }
+                if (start === end) { let e = new Date(end); e.setDate(e.getDate() + 1); end = e.toISOString().split('T')[0]; }
+
+                let prog = row["Progress (%)"] || row["Progress"] || 0;
+                if (typeof prog === 'string') prog = prog.replace('%', '');
+
+                const s = (row["Status"] || row["State"] || "").toString().toLowerCase();
+                let customClass = 'bar-planned';
+                if (s.includes("active") || s.includes("progress") || s === "execution") customClass = 'bar-active';
+                if (s.includes("risk") || s.includes("delayed") || s === "testing") customClass = 'bar-risk';
+                if (s.includes("completed") || s.includes("done")) customClass = 'bar-completed';
+
+                return {
+                    id: `Task_${row._row || index}`,
+                    name: name,
+                    start: start,
+                    end: end,
+                    progress: parseFloat(prog) || 0,
+                    custom_class: customClass
+                };
+            });
+
+            chartContainer.innerHTML = '<svg id="gantt-svg"></svg>';
+            activeGanttChart = new Gantt("#gantt-svg", ganttData, {
+                header_height: 50,
+                column_width: 30,
+                step: 24,
+                view_modes: ['Day', 'Week', 'Month'],
+                bar_height: 25,
+                bar_corner_radius: 6,
+                arrow_curve: 5,
+                padding: 18,
+                view_mode: 'Day',
+                date_format: 'YYYY-MM-DD',
+                language: 'en'
+            });
+        }
+
+        window.changeGanttView = (mode) => {
+            if (activeGanttChart) {
+                activeGanttChart.change_view_mode(mode);
+            }
+        }
+
+        // --- TABLE RENDERERS ---
+        function renderProjectsTable() {
+            if (isDemoMode) document.getElementById('demo-badge').classList.remove('hidden');
+            document.getElementById('last-updated').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+            document.getElementById('last-updated').classList.remove('hidden');
+
+            let total = 0, active = 0, risk = 0, completed = 0;
+            let tableHTML = '';
+
+            if (currentProjects.length === 0) {
+                tableHTML = `<tr><td colspan="6" class="px-6 py-12 text-center text-slate-500">No projects found. Click 'Add Project' to get started!</td></tr>`;
+            } else {
+                currentProjects.forEach((row) => {
+                    total++;
+                    const statusRaw = (row["Status"] || row["State"] || "Planning").toString();
+                    const s = statusRaw.toLowerCase();
+                    
+                    if (s.includes("active") || s.includes("in progress") || s === "execution") active++;
+                    if (s.includes("risk") || s.includes("delayed") || s === "testing") risk++;
+                    if (s.includes("completed") || s.includes("done")) completed++;
+
+                    const name = row["Project Name"] || row["Name"] || row["Project"] || `Unnamed Project`;
+                    const manager = row["Project Manager"] || row["Manager"] || row["Owner"] || row["Lead"] || "Unassigned";
+                    const dueDate = row["Due Date"] || row["Deadline"] || row["End Date"] || "TBD";
+                    
+                    // --- AUTO CALCULATE PROGRESS BASED ON TASKS ---
+                    const projectTasks = allTasks.filter(t => {
+                        const pName = t["Project Name"] || t["Project"] || "";
+                        return pName.toLowerCase() === name.toLowerCase();
+                    });
+
+                    let calculatedProgress = 0;
+                    if (projectTasks.length > 0) {
+                        const completedCount = projectTasks.filter(t => {
+                            const taskStatus = (t["Status"] || t["State"] || "").toString().toLowerCase();
+                            return taskStatus.includes("completed") || taskStatus.includes("done");
+                        }).length;
+                        calculatedProgress = Math.round((completedCount / projectTasks.length) * 100);
+                    } else {
+                        // Fallback to manual entry if they haven't created tasks yet
+                        let progressVal = row["Progress (%)"] || row["Progress"] || 0;
+                        if (typeof progressVal === 'string') progressVal = progressVal.replace('%', '');
+                        calculatedProgress = parseFloat(progressVal) || 0;
+                    }
+                    
+                    const clampedProgress = Math.min(100, Math.max(0, calculatedProgress));
+                    
+                    const rowJson = encodeURIComponent(JSON.stringify(row)).replace(/'/g, "%27");
+                    const safeName = name.replace(/'/g, "\\'");
+
+                    tableHTML += `
+                        <tr class="hover:bg-slate-50 transition-colors group">
+                            <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm font-medium text-slate-900">${name}</div></td>
+                            <td class="px-6 py-4 whitespace-nowrap">${getStatusBadgeHTML(statusRaw)}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${manager}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${dueDate}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-sm font-medium text-slate-700 w-8">${clampedProgress}%</span>
+                                    <div class="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
+                                        <div class="h-full rounded-full ${getProgressColorClass(clampedProgress)}" style="width: ${clampedProgress}%"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <button onclick="viewProjectTasks('${safeName}')" class="text-slate-400 hover:text-indigo-600 mx-1 p-1 rounded transition-colors" title="View Tasks & Timeline">
+                                    <i data-lucide="list-todo" class="w-4 h-4"></i>
+                                </button>
+                                <button onclick="openEditProjectModal('${rowJson}')" class="text-slate-400 hover:text-blue-600 mx-1 p-1 rounded transition-colors" title="Edit">
+                                    <i data-lucide="edit-2" class="w-4 h-4"></i>
+                                </button>
+                                <button onclick="openDeleteModal('project', ${row._row}, '${safeName}')" class="text-slate-400 hover:text-red-600 p-1 rounded transition-colors" title="Delete">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            document.getElementById('kpi-total').textContent = total;
+            document.getElementById('kpi-active').textContent = active;
+            document.getElementById('kpi-risk').textContent = risk;
+            document.getElementById('kpi-completed').textContent = completed;
+            document.getElementById('table-body').innerHTML = tableHTML;
+            lucide.createIcons();
+        }
+
+        function renderTasksTable() {
+            document.getElementById('task-view-project-name').textContent = activeProjectName;
+            
+            const filteredTasks = getFilteredTasks();
+
+            let tableHTML = '';
+            if (filteredTasks.length === 0) {
+                tableHTML = `<tr><td colspan="4" class="px-6 py-12 text-center text-slate-500">No tasks match your filters.</td></tr>`;
+            } else {
+                filteredTasks.forEach(row => {
+                    const taskName = row["Task Name"] || row["Task"] || "Unnamed Task";
+                    const statusRaw = row["Status"] || row["State"] || "Not Started";
+                    const assignee = row["Assignee"] || row["Assigned To"] || row["Task Owner"] || row["Owner"] || "Unassigned";
+                    const notes = row["Notes"] || row["Comments"] || row["Description"] || "";
+                    
+                    let rowTitleAttr = '';
+                    let notesIconHTML = '';
+                    
+                    if (notes.trim() !== '') {
+                        const safeNotes = notes.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;").replace(/\n/g, "&#10;");
+                        rowTitleAttr = `title="Notes:&#10;${safeNotes}"`;
+                        notesIconHTML = `<i data-lucide="message-square" class="w-4 h-4 text-indigo-400 ml-2 shrink-0"></i>`;
+                    }
+
+                    const rowJson = encodeURIComponent(JSON.stringify(row)).replace(/'/g, "%27");
+                    const safeName = taskName.replace(/'/g, "\\'");
+
+                    tableHTML += `
+                        <tr class="hover:bg-slate-50 transition-colors cursor-default" ${rowTitleAttr}>
+                            <td class="px-6 py-4">
+                                <div class="flex items-center text-sm font-medium text-slate-900 whitespace-normal break-words">
+                                    ${taskName} ${notesIconHTML}
+                                </div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">${getStatusBadgeHTML(statusRaw)}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">${assignee}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <button onclick="openEditTaskModal('${rowJson}')" class="text-slate-400 hover:text-blue-600 mx-1 p-1 rounded transition-colors" title="Edit">
+                                    <i data-lucide="edit-2" class="w-4 h-4"></i>
+                                </button>
+                                <button onclick="openDeleteModal('task', ${row._row}, '${safeName}')" class="text-slate-400 hover:text-red-600 p-1 rounded transition-colors" title="Delete">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            document.getElementById('task-table-body').innerHTML = tableHTML;
+            lucide.createIcons();
+        }
+
+        // --- NAVIGATION & FORMS ---
+        window.viewProjectTasks = (projectName) => {
+            activeProjectName = projectName;
+            
+            // Reset Filters
+            filterTaskSearch = "";
+            filterTaskStatus = "All";
+            filterTaskAssignee = "All";
+            document.getElementById('filter-task-search').value = "";
+            
+            fetchAndRenderTasks('read');
+        }
+
+        window.backToProjects = () => {
+            activeProjectName = null;
+            // Refetch the projects so the auto-calculated math updates immediately!
+            fetchAndRenderProjects('read');
+        }
+
+        document.getElementById('project-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const rowDataArray = extractDynamicFormData('dynamic-project-fields', projectHeaders, currentEditingProjectRow);
+            fetchAndRenderProjects(editingProjectId ? 'update' : 'create', editingProjectId, rowDataArray);
+        });
+
+        document.getElementById('task-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const overrides = { 'project name': activeProjectName, 'project': activeProjectName };
+            const rowDataArray = extractDynamicFormData('dynamic-task-fields', taskHeaders, currentEditingTaskRow, overrides);
+            fetchAndRenderTasks(editingTaskId ? 'update' : 'create', editingTaskId, rowDataArray);
+        });
+
+        document.getElementById('btn-confirm-delete').addEventListener('click', () => {
+            if (deletingItemType === 'project') fetchAndRenderProjects('delete', deletingItemId);
+            else if (deletingItemType === 'task') fetchAndRenderTasks('delete', deletingItemId);
+        });
+
+        // --- MODAL CONTROLS ---
+        window.openAddProjectModal = () => {
+            editingProjectId = null;
+            currentEditingProjectRow = null;
+            document.getElementById('project-modal-title').textContent = "Add New Project";
+            generateDynamicFields('dynamic-project-fields', projectHeaders, {}, projectStatusOptions, []);
+            document.getElementById('project-modal').classList.remove('hidden');
+            document.body.classList.add('modal-open');
+        }
+
+        window.openEditProjectModal = (rowJsonStr) => {
+            const row = JSON.parse(decodeURIComponent(rowJsonStr));
+            editingProjectId = row._row;
+            currentEditingProjectRow = row; 
+            document.getElementById('project-modal-title').textContent = "Edit Project";
+            generateDynamicFields('dynamic-project-fields', projectHeaders, row, projectStatusOptions, []);
+            document.getElementById('project-modal').classList.remove('hidden');
+            document.body.classList.add('modal-open');
+        }
+
+        window.openAddTaskModal = () => {
+            editingTaskId = null;
+            currentEditingTaskRow = null;
+            document.getElementById('task-modal-title').textContent = "Add Task";
+            generateDynamicFields('dynamic-task-fields', taskHeaders, {}, taskStatusOptions, ['project name', 'project']);
+            document.getElementById('task-modal').classList.remove('hidden');
+            document.body.classList.add('modal-open');
+        }
+
+        window.openEditTaskModal = (rowJsonStr) => {
+            const row = JSON.parse(decodeURIComponent(rowJsonStr));
+            editingTaskId = row._row;
+            currentEditingTaskRow = row;
+            document.getElementById('task-modal-title').textContent = "Edit Task";
+            generateDynamicFields('dynamic-task-fields', taskHeaders, row, taskStatusOptions, ['project name', 'project']);
+            document.getElementById('task-modal').classList.remove('hidden');
+            document.body.classList.add('modal-open');
+        }
+
+        window.openDeleteModal = (type, rowId, itemName) => {
+            deletingItemType = type;
+            deletingItemId = rowId;
+            document.getElementById('delete-type-label').textContent = type === 'project' ? 'Project' : 'Task';
+            document.getElementById('delete-item-name').textContent = itemName;
+            document.getElementById('delete-modal').classList.remove('hidden');
+            document.body.classList.add('modal-open');
+        }
+
+        window.closeModals = () => {
+            document.getElementById('project-modal').classList.add('hidden');
+            document.getElementById('task-modal').classList.add('hidden');
+            document.getElementById('delete-modal').classList.add('hidden');
+            document.body.classList.remove('modal-open');
+            editingProjectId = null;
+            editingTaskId = null;
+            deletingItemId = null;
+        }
+
+        // --- Standard Event Listeners ---
+        document.getElementById('setup-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const url = document.getElementById('sheet-url').value.trim();
+            if (!url.includes('script.google.com') || !url.includes('macros')) {
+                showError("Invalid URL. Please paste the 'Web App' URL generated by Google Apps Script.");
+                return;
+            }
+            activeScriptUrl = url;
+            isDemoMode = false;
+            fetchAndRenderProjects('read');
+        });
+
+        document.getElementById('btn-demo').addEventListener('click', () => {
+            document.getElementById('error-message').classList.add('hidden');
+            isDemoMode = true;
+            activeScriptUrl = null;
+            fetchAndRenderProjects('read');
+        });
+
+        document.getElementById('btn-refresh').addEventListener('click', () => {
+            if (currentView === 'dashboard') fetchAndRenderProjects('read');
+            else if (currentView === 'tasks') fetchAndRenderTasks('read');
+        });
+        
+        document.getElementById('btn-add-project').addEventListener('click', openAddProjectModal);
+        document.getElementById('btn-add-task').addEventListener('click', openAddTaskModal);
+
+        document.getElementById('btn-setup-view').addEventListener('click', () => {
+            switchView('setup');
+            activeScriptUrl = null;
+            isDemoMode = false;
+        });
+
+    </script>
+</body>
+</html>
