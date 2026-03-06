@@ -61,7 +61,7 @@
                 <button id="btn-refresh" class="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 font-medium transition-colors bg-white hover:bg-slate-50 text-slate-700">
                     <i data-lucide="refresh-cw" id="refresh-icon" class="h-4 w-4"></i> Refresh
                 </button>
-                <button id="btn-setup-view" class="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium transition-colors">
+                <button id="btn-setup-view" class="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-medium transition-colors hidden">
                     <i data-lucide="settings" class="h-4 w-4"></i> Setup
                 </button>
             </div>
@@ -297,9 +297,9 @@
 
     <script>
         // ==========================================
-        // ⚙️ SETUP: APP SCRIPT URL (Leave blank for GitHub)
+        // ⚙️ SETUP: HARDCODED APP SCRIPT URL
         // ==========================================
-        let activeScriptUrl = ""; 
+        let activeScriptUrl = "https://script.google.com/macros/s/AKfycbw1SUQx2XvYskmhtXpJpAwanHJPURAwf9nP2hx0hatA3djTTdE0kMC9iTrHmtpVlkjUQQ/exec"; 
         // ==========================================
 
         // --- State Variables ---
@@ -345,16 +345,10 @@
 
         // --- Auto-Load Logic ---
         window.addEventListener('DOMContentLoaded', () => {
-            // Check if there is a saved URL in localStorage (Good for GitHub Pages!)
-            const savedUrl = localStorage.getItem('projecthq_script_url');
-            if (savedUrl) {
-                activeScriptUrl = savedUrl;
-            }
-
             if (activeScriptUrl && activeScriptUrl.trim() !== "") {
                 isDemoMode = false;
                 document.getElementById('sheet-url').value = activeScriptUrl; 
-                fetchAndRenderProjects('read');
+                fetchAndRenderProjects('read'); // Automatically load the dashboard
             } else {
                 switchView('setup');
             }
@@ -1056,7 +1050,6 @@
                 return;
             }
             activeScriptUrl = url;
-            localStorage.setItem('projecthq_script_url', url); // Save for next time
             isDemoMode = false;
             fetchAndRenderProjects('read');
         });
@@ -1079,7 +1072,6 @@
         document.getElementById('btn-setup-view').addEventListener('click', () => {
             switchView('setup');
             activeScriptUrl = null;
-            localStorage.removeItem('projecthq_script_url'); // Clear saved URL
             document.getElementById('sheet-url').value = '';
             isDemoMode = false;
         });
@@ -1087,4 +1079,3 @@
     </script>
 </body>
 </html>
-
