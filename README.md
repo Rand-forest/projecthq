@@ -1,5 +1,6 @@
 # projecthq
 Gemini Canvas Project Dashboard
+
 📊 ProjectHQ: Google Sheets Project Management Dashboard
 ProjectHQ is a lightweight, serverless Project Management Dashboard that runs entirely in your web browser and uses Google Sheets as its database.
 It features dynamic forms, automatic project progress calculation, native task filtering, and an interactive Gantt chart. Because it relies on Google Apps Script, it seamlessly bypasses corporate firewalls while maintaining your organization's strict Google Workspace security.
